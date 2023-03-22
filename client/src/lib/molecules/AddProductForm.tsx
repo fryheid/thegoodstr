@@ -1,5 +1,10 @@
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import { SubmitHandler, useForm } from "react-hook-form";
+import { sha256 } from '@noble/hashes/sha256';
+import * as secp256k1 from '@noble/secp256k1';
+import { initNostr, SendMsgType } from '@nostrgg/client';
+
+const utf8Encoder = new TextEncoder();
 
 export type AddProduct = {
   title: string;
@@ -13,11 +18,85 @@ export type AddProduct = {
   nsec: string;
 };
 
+function getEventHash(event: any): string {
+  const eventHash = sha256(utf8Encoder.encode(serializeEvent(event)));
+  return secp256k1.utils.bytesToHex(eventHash);
+}
+
+function serializeEvent(evt): string {
+  return JSON.stringify([
+    0,
+    evt.pubkey,
+    evt.created_at,
+    evt.kind,
+    evt.tags,
+    evt.content,
+  ]);
+}
+
 export default function AddProductForm({
-  onSubmit,
+  test = async function(e){
+    e.preventDefault();
+
+    if (!window.nostr) {
+      alert('No extension found')
+      return;
+    }
+
+    try {
+      const content = `Adding a new product`;
+      const pubkey = await window.nostr.getPublicKey();
+      const unsignedEvent: any = {
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        kind: 1,
+        tags: [
+          [
+            'p',
+          ],
+        ],
+        content,
+      };
+      unsignedEvent.id = getEventHash(unsignedEvent);
+
+      const signedEvent = await window.nostr.signEvent(unsignedEvent);
+
+      // publish to some relays via API
+      // initNostr({
+      //   relayUrls: [
+      //     'wss://nostr.zebedee.cloud',
+      //   ],
+      //   onConnect: (relayUrl, sendEvent) => {
+      //     console.log(
+      //       'Nostr connected to:',
+      //       relayUrl,
+      //       // sendEvent,
+      //       'sending signedEvent ',
+      //       signedEvent
+      //     );
+
+      //     // Send a REQ event to start listening to events from that relayer:
+      //     sendEvent([SendMsgType.EVENT, signedEvent], relayUrl);
+      //   },
+      //   onEvent: (relayUrl: any, event: any) => {
+      //     console.log('Nostr received event:', relayUrl, event);
+      //   },
+      //   onError(relayUrl, err) {
+      //     console.log('nostr error ', relayUrl, err);
+      //   },
+      //   debug: true, // Enable logs
+      // });
+
+      console.log(unsignedEvent);
+      alert('Succes!');
+    } catch (error: any) {
+      console.log('signWithNip07 error ', error.message);
+    }
+
+  },
   isLoading = false,
 }: {
-  onSubmit: SubmitHandler<AddProduct>;
+  test: any;
   isLoading: boolean;
 }) {
   const { register, handleSubmit } = useForm<AddProduct>();
@@ -25,7 +104,7 @@ export default function AddProductForm({
   return (
     <form
       className="space-y-8 divide-y divide-gray-200"
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={test}
     >
       <div className="space-y-8 divide-y divide-gray-200">
         <div>
@@ -46,7 +125,7 @@ export default function AddProductForm({
               <div className="mt-2 flex rounded-md shadow-sm">
                 <input
                   {...register("title", {
-                    required: true,
+                    // required: true,
                     disabled: isLoading,
                   })}
                   type="text"
@@ -70,7 +149,7 @@ export default function AddProductForm({
               <div className="mt-2">
                 <textarea
                   {...register("description", {
-                    required: true,
+                    // required: true,
                     disabled: isLoading,
                   })}
                   id="description"
@@ -116,7 +195,7 @@ export default function AddProductForm({
                       <input
                         id="image"
                         {...register("image", {
-                          required: true,
+                          // required: true,
                           disabled: isLoading,
                         })}
                         type="file"
@@ -153,7 +232,7 @@ export default function AddProductForm({
                       <input
                         id="asset"
                         {...register("asset", {
-                          required: true,
+                          // required: true,
                           disabled: isLoading,
                         })}
                         type="file"
@@ -172,31 +251,6 @@ export default function AddProductForm({
                 Combine multiple files into a ZIP file.
               </p>
             </div>
-
-            <div className="sm:col-span-6">
-              <label
-                htmlFor="nsec"
-                className="block text-sm font-medium leading-6 text-gray-900"
-              >
-                NOSTR private key
-              </label>
-              <div className="mt-2 flex rounded-md shadow-sm">
-                <input
-                  type="text"
-                  {...register("nsec", {
-                    required: true,
-                    disabled: isLoading,
-                  })}
-                  id="nsec"
-                  autoComplete="nsec"
-                  className="block w-full rounded-md border-0 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-gray-600 sm:py-1.5 sm:text-sm sm:leading-6"
-                  placeholder="nsec..."
-                />
-              </div>
-              <p className="mt-2 text-sm text-gray-500">
-                Prove that you are the seller of this product.
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -204,7 +258,7 @@ export default function AddProductForm({
       <div className="pt-5">
         <div className="flex justify-end">
           <input
-            value={isLoading ? "Uploading ..." : "Add"}
+            value={isLoading ? "Uploading ..." : "Add using extension"}
             disabled={isLoading}
             type="submit"
             className={
